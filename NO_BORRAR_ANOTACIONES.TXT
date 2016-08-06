@@ -1,0 +1,19 @@
+Proyecto -> Propiedades:
+
+-> Propiedades de configuracion -> General /-> Tipo de configuracion -> Bibliotaca dinamica (.dll)
+-> Propiedades de configuracion -> General /-> Juego de caracteres -> Utilizar juego de caracteres multibyte
+                                                                      // MUY IMPORTANTE _T(str) DA ERROR SI ESTA EN UNICODE
+
+-> C/C++ -> General -> Directorio de inclusion adicionales -> C:\php-src;C:\php-src\main;C:\php-src\Zend;C:\php-src\TSRM;%(AdditionalIncludeDirectories)
+
+-> C/C++ / -> Generacion de codigo -> Biblioteca en tiempo de ejecucion -> DLL multiproceso (/MD)
+                                                                           //Depuración multiproceso (/MTd) // lo recomiendan pero pesa mas!!!! 950kb vs 56kb
+-> Vinculador -> Directorio de inclusion adicionales -> C:\php\dev;
+
+Edit -> C:\php-src\Zend\zend_build.h: #define PHP_COMPILER_ID "VC14"
+
+Copy -> C:\php-src\win32\build\config.win32.h.in
+To   ->	C:\php-src\main\config.win32.h
+
+Edit -> C:\php-src\main\config.win32.h: //# define _USE_32BIT_TIME_T 1
+                                        //IMPORTANTE COMENTAR ESTA LINEA PARA QUE NO DE ERROR EN LA COMPILACION 32 BITS
