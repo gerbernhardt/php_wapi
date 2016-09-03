@@ -3,13 +3,22 @@
  * if you make any improvements please let me know thanks!
  */
 #include "stdafx.h"
-#include <Windows.h>
+
+#include <windows.h>
 #include "sendkeys.h"
 #include "sendkeys.cpp"
 #include "serial.h"
 #include "serial.cpp"
 #include <commdlg.h>
 #include <tchar.h>
+
+// JPEG CONVERSION
+#include <unknwn.h>
+#include <gdiplus.h>
+#include <memory>
+#pragma comment (lib,"Gdiplus.lib")
+using namespace Gdiplus;
+using namespace std;
 
  // ZNTS = NON THREAD SAFE
 //#pragma comment(lib,"php7.lib")
@@ -74,50 +83,105 @@ ZEND_GET_MODULE(wapi)
 
 class CScreenShot {
 public:
+	/*
+	 * philipgoh/screen_grab.cpp
+	 * https://gist.github.com/philipgoh/3865787
+	 */
+	int GetEncoderClsid(const WCHAR* format, CLSID* pClsid) {
+		UINT num = 0;          // number of image encoders
+		UINT size = 0;         // size of the image encoder array in bytes
+		ImageCodecInfo* pImageCodecInfo = NULL;
+		
+		GetImageEncodersSize(&num, &size);
+		if (size == 0) return -1;  // Failure
+		
+		pImageCodecInfo = (ImageCodecInfo*)(malloc(size));
+		if (pImageCodecInfo == NULL) return -1;  // Failure
+		
+		GetImageEncoders(num, size, pImageCodecInfo);
+		for (UINT j = 0; j < num; ++j) {
+			if (wcscmp(pImageCodecInfo[j].MimeType, format) == 0) {
+				*pClsid = pImageCodecInfo[j].Clsid;
+				free(pImageCodecInfo);
+				return j;  // Success
+			}
+		}
+		free(pImageCodecInfo);
+		return -1;  // Failure
+	}
+
 	void screenshot(HWND WindowHwnd, char *name, DWORD left, DWORD top, DWORD width, DWORD height) {
 		RECT WindowParams;
 		GetClientRect(WindowHwnd, &WindowParams);
-		//create
+		if (width == 0) width = WindowParams.right - WindowParams.left;
+		if (height == 0) height = WindowParams.bottom - WindowParams.top;
+
+		//CREATE
 		HDC DevC = GetDC(NULL);
 		HDC CaptureDC = CreateCompatibleDC(DevC);
 		HBITMAP CaptureBitmap = CreateCompatibleBitmap(DevC, WindowParams.right - WindowParams.left, WindowParams.bottom - WindowParams.top);
 		SelectObject(CaptureDC, CaptureBitmap);
-		// INI
-		GetWindowRect(WindowHwnd, &WindowParams);
-		if (width == 0) width = WindowParams.right - WindowParams.left;
-		if (height == 0) height = WindowParams.bottom - WindowParams.top;
+		
+		char ext[4];
+		memcpy(ext, &name[(strlen(name) - 3)], 3);
+		ext[3] = '\0';
+		if (strcmp(ext, "jpg") == 0) {
+			// Initialize GDI+.
+			GdiplusStartupInput gdiplusStartupInput;
+			ULONG_PTR gdiplusToken;
+			GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, NULL);
 
-		DWORD FileSize = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + (sizeof(RGBTRIPLE) + 1 * (width*height * 4));
-		char *BmpFileData = (char*)GlobalAlloc(0x0040, FileSize);
-		PBITMAPFILEHEADER BFileHeader = (PBITMAPFILEHEADER)BmpFileData;
-		PBITMAPINFOHEADER  BInfoHeader = (PBITMAPINFOHEADER)&BmpFileData[sizeof(BITMAPFILEHEADER)];
-		BFileHeader->bfType = 0x4D42; // BM
-		BFileHeader->bfSize = sizeof(BITMAPFILEHEADER);
-		BFileHeader->bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
-		BInfoHeader->biSize = sizeof(BITMAPINFOHEADER);
-		BInfoHeader->biPlanes = 1;
-		BInfoHeader->biBitCount = 24;
-		BInfoHeader->biCompression = BI_RGB;
-		BInfoHeader->biHeight = height;
-		BInfoHeader->biWidth = width;
-		RGBTRIPLE *image = (RGBTRIPLE*)&BmpFileData[sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER)];
-		RGBTRIPLE color;
+			// JPEG
+			BitBlt(CaptureDC, 0, 0, width, height, DevC, left, top, SRCCOPY | CAPTUREBLT);
+			Bitmap *p_bmp = Bitmap::FromHBITMAP(CaptureBitmap, NULL);
+			CLSID pngClsid;
+			int result = GetEncoderClsid(L"image/jpeg", &pngClsid);
+			
+			WCHAR wname[255];
+			int len = strlen(name);
+			for (int i = 0; i < len; i++) {
+				wname[i] = name[i];
+				if (i == len - 1) wname[i + 1] = '\0';
+			}
+			p_bmp->Save(wname, &pngClsid, NULL);
+			delete p_bmp;
 
-		BitBlt(CaptureDC, 0, 0, width, height, DevC, left, top, SRCCOPY | CAPTUREBLT);
-		GetDIBits(CaptureDC, CaptureBitmap, 0, height, image, (LPBITMAPINFO)BInfoHeader, DIB_RGB_COLORS);
+			//Shutdown GDI+
+			GdiplusShutdown(gdiplusToken);
+
+		} else {
+			// BMP
+			DWORD FileSize = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + (sizeof(RGBTRIPLE) + 1 * (width*height * 4));
+			char *BmpFileData = (char*)GlobalAlloc(0x0040, FileSize);
+			PBITMAPFILEHEADER BFileHeader = (PBITMAPFILEHEADER)BmpFileData;
+			PBITMAPINFOHEADER  BInfoHeader = (PBITMAPINFOHEADER)&BmpFileData[sizeof(BITMAPFILEHEADER)];
+			BFileHeader->bfType = 0x4D42; // BM
+			BFileHeader->bfSize = sizeof(BITMAPFILEHEADER);
+			BFileHeader->bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
+			BInfoHeader->biSize = sizeof(BITMAPINFOHEADER);
+			BInfoHeader->biPlanes = 1;
+			BInfoHeader->biBitCount = 24;
+			BInfoHeader->biCompression = BI_RGB;
+			BInfoHeader->biHeight = height;
+			BInfoHeader->biWidth = width;
+			RGBTRIPLE *image = (RGBTRIPLE*)&BmpFileData[sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER)];
+			RGBTRIPLE color;
+
+			BitBlt(CaptureDC, 0, 0, width, height, DevC, left, top, SRCCOPY | CAPTUREBLT);
+			GetDIBits(CaptureDC, CaptureBitmap, 0, height, image, (LPBITMAPINFO)BInfoHeader, DIB_RGB_COLORS);
+
+			DWORD Junk;
+			HANDLE FH = CreateFileA(name, GENERIC_WRITE, FILE_SHARE_WRITE, 0, CREATE_ALWAYS, 0, 0);
+			WriteFile(FH, BmpFileData, FileSize, &Junk, 0);
+			CloseHandle(FH);
+			GlobalFree(BmpFileData);
+		}
 
 		// clean up
 		DeleteObject(CaptureBitmap);// fuck glitch 9994
 		DeleteDC(CaptureDC);
 		ReleaseDC(NULL, DevC);// fuck glitch 9994
 		DeleteDC(DevC);
-
-		DWORD Junk;
-		HANDLE FH = CreateFileA(name, GENERIC_WRITE, FILE_SHARE_WRITE, 0, CREATE_ALWAYS, 0, 0);
-		WriteFile(FH, BmpFileData, FileSize, &Junk, 0);
-
-		CloseHandle(FH);
-		GlobalFree(BmpFileData);
 		// END
 	};
 };
