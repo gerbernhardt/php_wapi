@@ -45,16 +45,24 @@ static zend_function_entry wapi_functions[]={
 	PHP_FE(wapi_get_window,NULL)
 	PHP_FE(wapi_set_window,NULL)
 	PHP_FE(wapi_get_window_process_id,NULL)
+	PHP_FE(wapi_open_process,NULL)
+	PHP_FE(wapi_read_process_memory,NULL)
+	PHP_FE(wapi_write_process_memory,NULL)
+
 	PHP_FE(wapi_get_window_text,NULL)
 	PHP_FE(wapi_set_window_text,NULL)
+
 	PHP_FE(wapi_get_clipboard,NULL)
 	PHP_FE(wapi_set_clipboard,NULL)
+
 	PHP_FE(wapi_mouse_event,NULL)
 	PHP_FE(wapi_set_cursor_pos,NULL)
 	PHP_FE(wapi_sendkeys,NULL)
 	PHP_FE(wapi_get_cursor_pos,NULL)
 	PHP_FE(wapi_get_key_state,NULL)
+
 	PHP_FE(wapi_dialog,NULL)
+
 	PHP_FE(wapi_serial_connect,NULL)
 	PHP_FE(wapi_serial_write,NULL)
 	PHP_FE(wapi_serial_read,NULL)
@@ -206,7 +214,7 @@ PHP_FUNCTION(wapi_get_window) {
 	} else if (strcmp(str, "foreground") == 0) {
 		RETURN_LONG((long)GetForegroundWindow());
 	} else {
-		RETURN_LONG((long)FindWindow(str, NULL));
+		RETURN_LONG((long)FindWindow(NULL, str));
 	}
 	RETURN_NULL();
 }
@@ -233,6 +241,25 @@ PHP_FUNCTION(wapi_get_window_process_id) {
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "l", &handle) == FAILURE) RETURN_NULL();
 	GetWindowThreadProcessId((HWND)handle, &id);
 	RETURN_LONG((long)id);
+}
+
+PHP_FUNCTION(wapi_open_process) {
+	zend_long pid;
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "l", &pid) == FAILURE) RETURN_NULL();
+	 RETURN_LONG((long)OpenProcess(PROCESS_ALL_ACCESS, false, (DWORD)pid));
+}
+
+PHP_FUNCTION(wapi_read_process_memory) {
+	zend_long handle, address; DWORD buffer = 22; SIZE_T bytes;
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "ll", &handle, &address) == FAILURE) RETURN_NULL();
+	ReadProcessMemory((HANDLE)handle, (LPCVOID)address, &buffer, sizeof(buffer), &bytes);
+	RETURN_LONG((long)buffer);
+}
+
+PHP_FUNCTION(wapi_write_process_memory) {
+	zend_long handle, address, value; SIZE_T bytes;
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "lll", &handle, &address, &value) == FAILURE) RETURN_NULL();
+	RETURN_BOOL(WriteProcessMemory((HANDLE)handle, (LPVOID)address, &value, sizeof(value), &bytes));
 }
 
 PHP_FUNCTION(wapi_get_window_text) {
