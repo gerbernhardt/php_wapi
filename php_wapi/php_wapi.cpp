@@ -11,6 +11,7 @@
 #include "serial.cpp"
 #include <commdlg.h>
 #include <tchar.h>
+#include <Tlhelp32.h>
 
 // JPEG CONVERSION
 #include <unknwn.h>
@@ -44,8 +45,15 @@ static zend_function_entry wapi_functions[]={
 	PHP_FE(wapi_screenshot,NULL)
 	PHP_FE(wapi_get_window,NULL)
 	PHP_FE(wapi_set_window,NULL)
+	PHP_FE(wapi_get_list_process_id,NULL)
 	PHP_FE(wapi_get_window_process_id,NULL)
 	PHP_FE(wapi_open_process,NULL)
+	PHP_FE(wapi_close_process,NULL)
+	
+	PHP_FE(wapi_close_handle,NULL)
+	PHP_FE(wapi_suspend_process,NULL)
+	PHP_FE(wapi_resume_process,NULL)
+
 	PHP_FE(wapi_read_process_memory,NULL)
 	PHP_FE(wapi_write_process_memory,NULL)
 
@@ -67,6 +75,7 @@ static zend_function_entry wapi_functions[]={
 	PHP_FE(wapi_serial_write,NULL)
 	PHP_FE(wapi_serial_read,NULL)
 	PHP_FE(wapi_serial_is_connected,NULL)
+	PHP_FE(wapi_test,NULL)
 	{NULL, NULL, NULL}
 };
 
@@ -236,6 +245,19 @@ PHP_FUNCTION(wapi_set_window) {
 	RETURN_BOOL(false);
 }
 
+PHP_FUNCTION(wapi_get_list_process_id) {
+	HANDLE hSnapShot = CreateToolhelp32Snapshot(TH32CS_SNAPALL, NULL);
+	PROCESSENTRY32 pEntry;
+	pEntry.dwSize = sizeof(pEntry);
+	BOOL hRes = Process32First(hSnapShot, &pEntry);
+	array_init(return_value);
+	while (hRes) {
+		add_assoc_long(return_value, pEntry.szExeFile, (long)pEntry.th32ProcessID, 1);
+		hRes = Process32Next(hSnapShot, &pEntry);
+	}
+	CloseHandle(hSnapShot);
+}
+
 PHP_FUNCTION(wapi_get_window_process_id) {
 	zend_long handle; DWORD id;
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "l", &handle) == FAILURE) RETURN_NULL();
@@ -249,11 +271,44 @@ PHP_FUNCTION(wapi_open_process) {
 	 RETURN_LONG((long)OpenProcess(PROCESS_ALL_ACCESS, false, (DWORD)pid));
 }
 
+PHP_FUNCTION(wapi_close_process) {
+	zend_long handle;
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "l", &handle) == FAILURE) RETURN_NULL();
+	TerminateProcess((HANDLE)handle, 9);
+}
+
+PHP_FUNCTION(wapi_close_handle) {
+	zend_long handle;
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "l", &handle) == FAILURE) RETURN_NULL();
+	CloseHandle((HANDLE)handle);
+}
+
+PHP_FUNCTION(wapi_suspend_process) {
+	zend_long handle;
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "l", &handle) == FAILURE) RETURN_NULL();
+	typedef LONG(NTAPI *NtSuspendProcess)(IN HANDLE handle);
+	NtSuspendProcess pfnNtSuspendProcess = (NtSuspendProcess)GetProcAddress(GetModuleHandle("ntdll"), "NtSuspendProcess");
+	pfnNtSuspendProcess((HANDLE)handle);
+}
+
+PHP_FUNCTION(wapi_resume_process) {
+	zend_long handle;
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "l", &handle) == FAILURE) RETURN_NULL();
+	typedef LONG(NTAPI *NtResumeProcess)(IN HANDLE handle);
+	NtResumeProcess pfnNtResumeProcess = (NtResumeProcess)GetProcAddress(GetModuleHandle("ntdll"), "NtResumeProcess");
+	pfnNtResumeProcess((HANDLE)handle);
+}
+
 PHP_FUNCTION(wapi_read_process_memory) {
-	zend_long handle, address; DWORD buffer = 22; SIZE_T bytes;
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "ll", &handle, &address) == FAILURE) RETURN_NULL();
-	ReadProcessMemory((HANDLE)handle, (LPCVOID)address, &buffer, sizeof(buffer), &bytes);
-	RETURN_LONG((long)buffer);
+	zend_long handle, address, longBuffer, len; char *str, strBuffer[64]; SIZE_T bytes;
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "sll", &str, &len, &handle, &address) == FAILURE) RETURN_NULL();
+	if (strcmp(str, "str") == 0) {
+		ReadProcessMemory((HANDLE)handle, (LPCVOID)address, &strBuffer, sizeof(strBuffer), 0);
+		RETURN_STRING(strBuffer);
+	} else {
+		ReadProcessMemory((HANDLE)handle, (LPCVOID)address, &longBuffer, sizeof(longBuffer), 0);
+		RETURN_LONG(longBuffer);
+	}
 }
 
 PHP_FUNCTION(wapi_write_process_memory) {
@@ -321,10 +376,11 @@ PHP_FUNCTION(wapi_sendkeys) {
 PHP_FUNCTION(wapi_get_cursor_pos) {
 	POINT point;
 	char buffer[11];
+	array_init(return_value);
 	if(GetCursorPos(&point)) {
-		snprintf(buffer, sizeof(buffer), "%d%s%d", point.x, ";", point.y);
+		add_assoc_long(return_value, "x", (long)point.x, 1);
+		add_assoc_long(return_value, "y", (long)point.y, 1);
 	}
-	RETURN_STRING(buffer);
 }
 
 PHP_FUNCTION(wapi_get_key_state) {
@@ -392,4 +448,43 @@ PHP_FUNCTION(wapi_serial_is_connected) {
 	} else {
 		RETURN_BOOL(false);
 	}
+}
+
+PHP_FUNCTION(wapi_test) {
+	zval *uservar;
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "z", &uservar) == FAILURE) RETURN_NULL();
+	switch (Z_TYPE_P(uservar)) {
+	case IS_NULL:
+		php_printf("NULL");
+		break;
+	case IS_FALSE:
+		php_printf("Boolean: %s", "FALSE");
+		break;
+	case IS_TRUE:
+		php_printf("Boolean: %s", "TRUE");
+		break;
+	case IS_LONG:
+		php_printf("Long: %ld", Z_LVAL_P(uservar));
+		break;
+	case IS_DOUBLE:
+		php_printf("Double: %f", Z_DVAL_P(uservar));
+		break;
+	case IS_STRING:
+		php_printf("String: ");
+		PHPWRITE(Z_STRVAL_P(uservar), Z_STRLEN_P(uservar));
+		php_printf("");
+		break;
+	case IS_RESOURCE:
+		php_printf("Resource");
+		break;
+	case IS_ARRAY:
+		php_printf("Array");
+		break;
+	case IS_OBJECT:
+		php_printf("Object");
+		break;
+	default:
+		php_printf("Unknown");
+	}
+	RETURN_TRUE;
 }
