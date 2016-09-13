@@ -3,7 +3,8 @@
  * if you make any improvements please let me know thanks!
  */
 #include "stdafx.h"
-
+#include <iostream>
+#include <vector>
 #include <windows.h>
 #include "sendkeys.h"
 #include "sendkeys.cpp"
@@ -128,6 +129,7 @@ public:
 	}
 
 	void screenshot(HWND WindowHwnd, char *name, DWORD left, DWORD top, DWORD width, DWORD height) {
+		//vector<string> german;
 		RECT WindowParams;
 		GetClientRect(WindowHwnd, &WindowParams);
 		if (width == 0) width = WindowParams.right - WindowParams.left;
